@@ -149,14 +149,19 @@
         <script id="fs" type="x-shader/x-fragment">
 
             uniform sampler2D map;
+            uniform sampler2D rgbMap;
+            uniform float enableRgbTexture;
 
             varying vec2 vUv;
 
             void main() {
 
-                vec4 color = texture2D( map, vUv );
-                gl_FragColor = vec4( 0.5, 0.5, 0.5, smoothstep( 8000.0, -8000.0, gl_FragCoord.z / gl_FragCoord.w ) );
-
+                if (enableRgbTexture == 1.) {
+                    vec4 color = texture2D( rgbMap, vUv );
+                    gl_FragColor = vec4( color.r, color.g, color.b, smoothstep( 8000.0, -8000.0, gl_FragCoord.z / gl_FragCoord.w ) );
+                } else {
+                    gl_FragColor = vec4( 0.5, 0.5, 0.5, smoothstep( 8000.0, -8000.0, gl_FragCoord.z / gl_FragCoord.w ) );
+                }
             }
 
         </script>
@@ -175,11 +180,16 @@
             var live = false;
             var button = document.getElementById("depth_capture_button");
 
-            var video, texture, canvas, context;
+            var depthVideo, depthTexture, depthCanvas, depthContext;
+            var rgbVideo, rgbTexture, rgbCanvas, rgbContext;
+
             var gui;
 
             var showDepthVideo = true;
             var depthStream = null;
+
+            var enableRgbTexture = false;
+            var rgbStream = null;
 
             var kLiveDepthStream = "Depth Stream from Live Capture";
             var kReplayDepthStream = "Depth Stream from depth_video.webm";
@@ -188,14 +198,26 @@
 
                 navigator.webkitGetUserMedia({
                     audio: false,
-                    video: { "mandatory": { "depth": true}},
+                    video: { "mandatory": { "depth": "depth"}},
                 },
                 function(stream) {
                     depthStream = stream;
-                    init(window.URL.createObjectURL(stream), kLiveDepthStream);
+                    navigator.webkitGetUserMedia({
+                        audio: false,
+                        video: { "mandatory": { "depth": "rgbd"}},
+                        },
+                        function(stream) {
+                            rgbStream = stream;
+                            init(window.URL.createObjectURL(depthStream),
+                                 window.URL.createObjectURL(rgbStream), 
+                                 kLiveDepthStream);
+                        },
+                        function(e) {
+                        console.log('fails to obtain rgbd stream ' + e);
+                    });
                 },
                 function(e) {
-                    console.log(e);
+                    console.log('fails to obtain depth stream ' + e);
                 });
 
             } else {
@@ -205,28 +227,37 @@
             }
 
             function reset() {
-                video.pause();
+                depthVideo.pause();
+                rgbVideo.pause();
                 if (depthStream) {
-                    depthStream.stop();
                     depthStream = null;
+                }
+                if (rgbStream) {
+                    rgbStream = null;
                 }
                 clearInterval(intervalId);
                 cancelAnimationFrame(animationId);
                 document.body.removeChild(container);
                 document.body.removeChild(info);
-                document.body.removeChild(video);
+                document.body.removeChild(depthVideo);
+                document.body.removeChild(rgbVideo);
                 document.body.removeChild(gui.domElement);
             }
 
             function drawVideo() {
-                if ( video.readyState === video.HAVE_ENOUGH_DATA ) {
-                    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    texture.needsUpdate = true;
+                if ( depthVideo.readyState === depthVideo.HAVE_ENOUGH_DATA ) {
+                    depthContext.drawImage(depthVideo, 0, 0, depthCanvas.width, depthCanvas.height);
+                    depthTexture.needsUpdate = true;
+                }
+
+                if ( enableRgbTexture && rgbVideo && rgbVideo.readyState === rgbVideo.HAVE_ENOUGH_DATA ) {
+                    rgbContext.drawImage(rgbVideo, 0, 0, rgbCanvas.width, rgbCanvas.height);
+                    rgbTexture.needsUpdate = true;
                 }
             }
 
-            function init(stream, description) {
 
+            function init(depthStream, rgbStream, description) {
                 container = document.createElement( 'div' );
                 document.body.appendChild( container );
 
@@ -249,13 +280,21 @@
                 center.z = - 1000;
 
 
-                video = document.createElement( 'video' );
-                canvas = document.createElement( 'canvas');
-                canvas.width = 320;
-                canvas.height = 240;
-                context = canvas.getContext('2d');
-                video.addEventListener( 'loadedmetadata', function ( event ) {
-                    texture = new THREE.Texture( canvas );
+                depthVideo = document.createElement( 'video' );
+                depthCanvas = document.createElement( 'canvas');
+                depthCanvas.width = 320;
+                depthCanvas.height = 240;
+                depthContext = depthCanvas.getContext('2d');
+
+                rgbVideo = document.createElement( 'video' );
+                rgbCanvas = document.createElement( 'canvas');
+                rgbCanvas.width = 320;
+                rgbCanvas.height = 240;
+                rgbContext = rgbCanvas.getContext('2d');
+
+                function VideoReady () {
+                    depthTexture = new THREE.Texture( depthCanvas );
+                    rgbTexture = new THREE.Texture( rgbCanvas );
 
                     var width = 320, height = 240;
                     var nearClipping = 150, farClipping = 3000;
@@ -276,15 +315,16 @@
 
                         uniforms: {
 
-                            "map": { type: "t", value: texture },
+                            "map": { type: "t", value: depthTexture },
+                            "rgbMap": { type: "t", value: rgbTexture },
                             "width": { type: "f", value: width },
                             "height": { type: "f", value: height },
                             "nearClipping": { type: "f", value: nearClipping },
                             "farClipping": { type: "f", value: farClipping },
-
                             "pointSize": { type: "f", value: 2 },
                             "zOffset": { type: "f", value: 0 },
-                            "depthEncoding": { type: "f", value: 0}
+                            "depthEncoding": { type: "f", value: 0},
+                            "enableRgbTexture": { type: "f", value: 0}
 
                         },
                         vertexShader: document.getElementById( 'vs' ).textContent,
@@ -292,7 +332,7 @@
                         depthTest: false, depthWrite: false,
                         transparent: true
 
-                    } );
+                    });
 
                     mesh = new THREE.ParticleSystem( geometry, material );
                     mesh.position.x = 0;
@@ -314,21 +354,54 @@
                         else
                             video.style.display = 'none';
                     });
+                    gui.add( window, 'enableRgbTexture').name('Enable RGB Texture').onChange(function(value) {
+                        if (value) {
+                            material.uniforms.enableRgbTexture.value = 1.0;
+                        } else {
+                            material.uniforms.enableRgbTexture.value = 0.0;
+                        }
+                    });
                     gui.add( material.uniforms.depthEncoding, 'value', { Grayscale: 0, Adaptive: 1, Raw: 2 } ).name('Depth Encoding');
                     gui.close();
 
                     intervalId = setInterval(drawVideo, 1000 / 30 );
                     animate();
 
-                }, false );
-                video.src = stream;
-                video.loop = true;
-                video.play();
+                }
 
-                video.style.position = 'absolute';
-                video.style.top = '0px';
-                video.style.left = '0px';
-                document.body.appendChild(video);
+                var isDepthVideoReady = false;
+                var isRgbVideoReady = false;
+
+                depthVideo.addEventListener( 'loadedmetadata', function(event) {
+                    isDepthVideoReady = true;
+
+                    if (isRgbVideoReady)
+                        VideoReady();
+                });
+                rgbVideo.addEventListener( 'loadedmetadata', function(event) {
+                    isRgbVideoReady = true;
+
+                    if (isDepthVideoReady)
+                        VideoReady();
+                });
+
+                depthVideo.src = depthStream;
+                depthVideo.loop = true;
+                depthVideo.play();
+
+                depthVideo.style.position = 'absolute';
+                depthVideo.style.top = '0px';
+                depthVideo.style.left = '0px';
+                document.body.appendChild(depthVideo);
+
+                rgbVideo.src = rgbStream;
+                rgbVideo.loop = true;
+                rgbVideo.play();
+
+                rgbVideo.style.position = 'absolute';
+                rgbVideo.style.top = '240px';
+                rgbVideo.style.left = '0px';
+                document.body.appendChild(rgbVideo);
 
                 renderer = new THREE.WebGLRenderer();
                 renderer.setSize( window.innerWidth, window.innerHeight );
