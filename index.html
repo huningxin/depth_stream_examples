@@ -203,7 +203,7 @@
             function start() {
                 navigator.webkitGetUserMedia({
                     audio: false,
-                    video: { "mandatory": { "depth": "depth"}},
+                    video: { "mandatory": { "depth": true}},
                 },
                 function(stream) {
                     depthStream = stream;
