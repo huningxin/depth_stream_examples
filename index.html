@@ -181,7 +181,7 @@
             var button = document.getElementById("depth_capture_button");
 
             var depthVideo, depthTexture, depthCanvas, depthContext;
-            var rgbVideo, rgbTexture, rgbCanvas, rgbContext;
+            var rgbVideo = null, rgbTexture = null, rgbCanvas = null, rgbContext = null;
 
             var gui;
 
@@ -195,53 +195,59 @@
             var kReplayDepthStream = "Depth Stream from depth_video.webm";
 
             if ( Detector.webgl ) {
+                start();
+            } else {
+                document.body.appendChild( Detector.getWebGLErrorMessage() );
+            }
 
+            function start() {
                 navigator.webkitGetUserMedia({
                     audio: false,
                     video: { "mandatory": { "depth": "depth"}},
                 },
                 function(stream) {
                     depthStream = stream;
-                    navigator.webkitGetUserMedia({
-                        audio: false,
-                        video: { "mandatory": { "depth": "rgbd"}},
-                        },
-                        function(stream) {
-                            rgbStream = stream;
-                            init(window.URL.createObjectURL(depthStream),
-                                 window.URL.createObjectURL(rgbStream), 
-                                 kLiveDepthStream);
-                        },
-                        function(e) {
-                        console.log('fails to obtain rgbd stream ' + e);
-                    });
+                    if (enableRgbTexture) {
+                        navigator.webkitGetUserMedia({
+                            audio: false,
+                            video: { "mandatory": { "depth": "rgbd"}},
+                            },
+                            function(stream) {
+                                rgbStream = stream;
+                                init(window.URL.createObjectURL(depthStream),
+                                     window.URL.createObjectURL(rgbStream), 
+                                     kLiveDepthStream);
+                            },
+                            function(e) {
+                            console.log('fails to obtain rgbd stream ' + e);
+                        });
+                    } else {
+                        init(window.URL.createObjectURL(depthStream),
+                             null, kLiveDepthStream);
+                    }
                 },
                 function(e) {
                     console.log('fails to obtain depth stream ' + e);
                 });
-
-            } else {
-
-                document.body.appendChild( Detector.getWebGLErrorMessage() );
-
             }
 
             function reset() {
                 depthVideo.pause();
-                rgbVideo.pause();
                 if (depthStream) {
                     depthStream = null;
-                }
-                if (rgbStream) {
-                    rgbStream = null;
                 }
                 clearInterval(intervalId);
                 cancelAnimationFrame(animationId);
                 document.body.removeChild(container);
                 document.body.removeChild(info);
                 document.body.removeChild(depthVideo);
-                document.body.removeChild(rgbVideo);
                 document.body.removeChild(gui.domElement);
+
+                if (rgbStream) {
+                    rgbVideo.pause();
+                    rgbStream = null;
+                    document.body.removeChild(rgbVideo);
+                }
             }
 
             function drawVideo() {
@@ -286,15 +292,18 @@
                 depthCanvas.height = 240;
                 depthContext = depthCanvas.getContext('2d');
 
-                rgbVideo = document.createElement( 'video' );
-                rgbCanvas = document.createElement( 'canvas');
-                rgbCanvas.width = 320;
-                rgbCanvas.height = 240;
-                rgbContext = rgbCanvas.getContext('2d');
+                if (enableRgbTexture) {
+                    rgbVideo = document.createElement( 'video' );
+                    rgbCanvas = document.createElement( 'canvas');
+                    rgbCanvas.width = 320;
+                    rgbCanvas.height = 240;
+                    rgbContext = rgbCanvas.getContext('2d');
+                }
 
                 function VideoReady () {
                     depthTexture = new THREE.Texture( depthCanvas );
-                    rgbTexture = new THREE.Texture( rgbCanvas );
+                    if (enableRgbTexture)
+                        rgbTexture = new THREE.Texture( rgbCanvas );
 
                     var width = 320, height = 240;
                     var nearClipping = 150, farClipping = 3000;
@@ -324,7 +333,7 @@
                             "pointSize": { type: "f", value: 2 },
                             "zOffset": { type: "f", value: 0 },
                             "depthEncoding": { type: "f", value: 0},
-                            "enableRgbTexture": { type: "f", value: 0}
+                            "enableRgbTexture": { type: "f", value: enableRgbTexture ? 1.0 : 0.0}
 
                         },
                         vertexShader: document.getElementById( 'vs' ).textContent,
@@ -355,11 +364,8 @@
                             video.style.display = 'none';
                     });
                     gui.add( window, 'enableRgbTexture').name('Enable RGB Texture').onChange(function(value) {
-                        if (value) {
-                            material.uniforms.enableRgbTexture.value = 1.0;
-                        } else {
-                            material.uniforms.enableRgbTexture.value = 0.0;
-                        }
+                        reset();
+                        start();
                     });
                     gui.add( material.uniforms.depthEncoding, 'value', { Grayscale: 0, Adaptive: 1, Raw: 2 } ).name('Depth Encoding');
                     gui.close();
@@ -375,15 +381,20 @@
                 depthVideo.addEventListener( 'loadedmetadata', function(event) {
                     isDepthVideoReady = true;
 
-                    if (isRgbVideoReady)
+                    if (!enableRgbTexture)
+                        VideoReady();
+                    else if (isRgbVideoReady)
                         VideoReady();
                 });
-                rgbVideo.addEventListener( 'loadedmetadata', function(event) {
-                    isRgbVideoReady = true;
 
-                    if (isDepthVideoReady)
-                        VideoReady();
-                });
+                if (enableRgbTexture) {
+                    rgbVideo.addEventListener( 'loadedmetadata', function(event) {
+                        isRgbVideoReady = true;
+
+                        if (isDepthVideoReady)
+                            VideoReady();
+                    });
+                }
 
                 depthVideo.src = depthStream;
                 depthVideo.loop = true;
@@ -394,14 +405,16 @@
                 depthVideo.style.left = '0px';
                 document.body.appendChild(depthVideo);
 
-                rgbVideo.src = rgbStream;
-                rgbVideo.loop = true;
-                rgbVideo.play();
+                if (enableRgbTexture) {
+                    rgbVideo.src = rgbStream;
+                    rgbVideo.loop = true;
+                    rgbVideo.play();
 
-                rgbVideo.style.position = 'absolute';
-                rgbVideo.style.top = '240px';
-                rgbVideo.style.left = '0px';
-                document.body.appendChild(rgbVideo);
+                    rgbVideo.style.position = 'absolute';
+                    rgbVideo.style.top = '240px';
+                    rgbVideo.style.left = '0px';
+                    document.body.appendChild(rgbVideo);
+                }
 
                 renderer = new THREE.WebGLRenderer();
                 renderer.setSize( window.innerWidth, window.innerHeight );
