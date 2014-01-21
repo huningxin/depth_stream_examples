@@ -1,7 +1,4 @@
-Depth Stream Extension for getUserMedia Example
+WebGL with Depth Stream Example
 
-The depth stream extension wiki:
-http://www.w3.org/wiki/Media_Capture_Depth_Stream_Extension
-
-This project is derived from:
+This example is derived from:
 * http://threejs.org/examples/webgl_kinect.html
