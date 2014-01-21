@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<meta name="keywords" content="JavaScript, WebRTC, Depth Stream" />
+<meta name="description" content="WebRTC codelab" />
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1">
+
+<title>WebRTC codelab: step 3</title>
+
+<style>
+    body {
+        font-family: Monospace;
+        background-color: #000000;
+        margin: 0px;
+        overflow: hidden;
+    }
+
+    #info {
+        color: #ffffff;
+
+        font-family: Monospace;
+        font-size: 13px;
+        text-align: center;
+        font-weight: bold;
+
+        position: absolute;
+        top: 0px; width: 100%;
+        padding: 5px;
+    }
+
+    #local3DSence {
+      position: absolute;
+      width: 640px;
+      height: 480px;
+    }
+
+    #remote3DSence {
+      position: absolute;
+      left: 650px;
+      width: 640px;
+      height: 480px;
+    }
+
+    a {
+
+        color: #0040ff;
+
+    }
+</style>
+
+</head>
+
+<body>
+
+  <video id="localVideo" autoplay muted></video>
+  <video id="localDepthVideo" autoplay muted></video>
+  <video id="remoteVideo" autoplay muted></video>
+  <video id="remoteDepthVideo" autoplay muted></video>
+  <div>
+    <button id="startButton">Start</button>
+    <button id="callButton">Call</button>
+    <button id="hangupButton">Hang Up</button>
+  </div>
+  <div id="local3DSence"></div>
+  <div id="remote3DSence"></div>
+<script src="libs/three.min.js"></script>
+<script src='libs/dat.gui.min.js'></script>
+<script src="libs/Detector.js"></script>
+<script src="libs/stats.min.js"></script>
+<script id="vs" type="x-shader/x-vertex">
+
+    uniform sampler2D map;
+
+    uniform float width;
+    uniform float height;
+    uniform float nearClipping, farClipping;
+
+    uniform float pointSize;
+    uniform float zOffset;
+
+    uniform float depthEncoding;
+
+    varying vec2 vUv;
+
+    const float XtoZ = 1.11146; // tan( 1.0144686 / 2.0 ) * 2.0;
+    const float YtoZ = 0.83359; // tan( 0.7898090 / 2.0 ) * 2.0;
+
+    const float max = 3000.;
+    const float min = 150.;
+    const float np = 512.;
+    const float w = max;
+
+    // Implement the depth decode scheme proposed in paper
+    // "Adapting Standard Video Codecs for Depth Streaming"
+    highp float decodeAdaptiveDepth(highp vec4 rgba) {
+        highp float L = rgba.b;
+        highp float Ha = rgba.g;
+        highp float Hb = rgba.r;
+        highp float p = np / w;
+
+        highp float m = mod(floor( 4. * L / p - 0.5 ), 4.);
+        highp float q;
+        if (m == 0.) {
+            q = p / 2. * Ha;
+        } else if (m == 1.) {
+            q = p / 2. * Hb;
+        } else if (m == 2.) {
+            q = p / 2. * (1. - Ha);
+        } else if (m == 3.) {
+            q = p / 2. * (1. - Hb);
+        }
+
+        highp float l = L - (mod(L - p / 8., p)) + p / 4. * m - p / 8.;
+
+        highp float d = w * (l + q);
+        if (d < min)
+            return 1.0;
+        else
+            return (l + q);
+    }
+
+    // Implement the BIT2 scheme described in paper
+    // "Adapting Standard Video Codecs for Depth Streaming"
+    highp float decodeRawDepth(highp vec4 rgba) {
+        highp float d = 255. * rgba.b * 256. +
+                        255. * rgba.g * 4. + 
+                        255. * rgba.r / 8.;
+        if (d < min || d > w)
+            return 1.0;
+        else
+            return d / w;
+    }
+
+    // Implement the equation (5) in paper
+    // "3-D Video Representation Using Depth Maps"
+    highp float decodeGrayscaleDepth(highp vec4 rgba) {
+        highp float d = 1.0 / (rgba.b * (1.0 / min - 1.0 / max) + 1.0 / max);
+        return d / max;
+    }
+
+    void main() {
+
+        vUv = vec2( position.x / width, position.y / height );
+
+        vec4 color = texture2D( map, vUv );
+
+        float depth = 1.0;
+
+        if (depthEncoding == 0.)
+            depth = decodeGrayscaleDepth(color);
+        else if (depthEncoding == 1.)
+            depth = decodeAdaptiveDepth(color);
+        else if (depthEncoding == 2.)
+            depth = decodeRawDepth(color);
+
+        // Projection code by @kcmic
+        float z = depth * (farClipping - nearClipping) + nearClipping;
+
+        vec4 pos = vec4(
+            ( position.x / width - 0.5 ) * z * XtoZ,
+            ( position.y / height - 0.5 ) * z * YtoZ,
+            - z + zOffset,
+            1.0);
+
+        gl_PointSize = pointSize;
+        gl_Position = projectionMatrix * modelViewMatrix * pos;
+
+    }
+
+</script>
+
+<script id="fs" type="x-shader/x-fragment">
+
+    uniform sampler2D map;
+    uniform sampler2D rgbMap;
+    uniform float enableRgbTexture;
+
+    varying vec2 vUv;
+
+    void main() {
+        vec4 color = texture2D( rgbMap, vUv );
+        gl_FragColor = vec4( color.r, color.g, color.b, smoothstep( 8000.0, -8000.0, gl_FragCoord.z / gl_FragCoord.w ) );
+    }
+
+</script>
+<script>
+var localStream, remoteStream, localPeerConnection, remotePeerConnection;
+var localDepthStream, remoteDepthStream;
+
+var localVideo = document.getElementById("localVideo");
+var localDepthVideo = document.getElementById("localDepthVideo");
+var remoteVideo = document.getElementById("remoteVideo");
+var remoteDepthVideo = document.getElementById("remoteDepthVideo");
+
+var container_width = 640, container_height = 480;
+var localContainer = document.getElementById("local3DSence");
+var remoteContainer = document.getElementById("remote3DSence");
+
+var startButton = document.getElementById("startButton");
+var callButton = document.getElementById("callButton");
+var hangupButton = document.getElementById("hangupButton");
+startButton.disabled = false;
+callButton.disabled = true;
+hangupButton.disabled = true;
+startButton.onclick = start;
+callButton.onclick = call;
+hangupButton.onclick = hangup;
+
+var stats = new Stats();
+stats.domElement.style.position = 'absolute';
+stats.domElement.style.bottom = '0px';
+stats.domElement.style.left = '0px';
+document.body.appendChild( stats.domElement );
+
+var nearClipping = 150, farClipping = 3000;
+var pointSize = 2;
+var zOffset = 500;
+
+function trace(text) {
+  console.log((performance.now() / 1000).toFixed(3) + ": " + text);
+}
+
+function gotStream(stream){
+  trace("Received local stream");
+  localVideo.src = URL.createObjectURL(stream);
+  localStream = stream;
+  callButton.disabled = false;
+  navigator.getUserMedia({audio:true, video: {'mandatory': {'depth': true}}}, gotDepthStream,
+    function(error) {
+      trace("navigator.getUserMedia error for depth stream: ", error);
+    });
+}
+
+function gotDepthStream(stream){
+  trace("Received local depth stream");
+  localDepthVideo.src = URL.createObjectURL(stream);
+  localDepthStream = stream;
+  startRendering(localContainer, localDepthVideo, localVideo);
+}
+
+function start() {
+  trace("Requesting local stream");
+  startButton.disabled = true;
+  navigator.getUserMedia = navigator.getUserMedia ||
+    navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+  navigator.getUserMedia({audio:true, video:{'mandatory': {'depth': 'rgbd'}}}, gotStream,
+    function(error) {
+      trace("navigator.getUserMedia error: ", error);
+    });
+}
+
+function call() {
+  callButton.disabled = true;
+  hangupButton.disabled = false;
+  trace("Starting call");
+
+  if (localStream.getVideoTracks().length > 0) {
+    trace('Using video device: ' + localStream.getVideoTracks()[0].label);
+  }
+  if (localStream.getAudioTracks().length > 0) {
+    trace('Using audio device: ' + localStream.getAudioTracks()[0].label);
+  }
+
+  var servers = null;
+
+  localPeerConnection = new webkitRTCPeerConnection(servers);
+  trace("Created local peer connection object localPeerConnection");
+  localPeerConnection.onicecandidate = gotLocalIceCandidate;
+
+  remotePeerConnection = new webkitRTCPeerConnection(servers);
+  trace("Created remote peer connection object remotePeerConnection");
+  remotePeerConnection.onicecandidate = gotRemoteIceCandidate;
+  remotePeerConnection.onaddstream = gotRemoteStream;
+
+  localPeerConnection.addStream(localStream);
+  localPeerConnection.addStream(localDepthStream);
+  trace("Added localStream to localPeerConnection");
+  localPeerConnection.createOffer(gotLocalDescription);
+}
+
+function gotLocalDescription(description){
+  localPeerConnection.setLocalDescription(description);
+  trace("Offer from localPeerConnection: \n" + description.sdp);
+  remotePeerConnection.setRemoteDescription(description);
+  remotePeerConnection.createAnswer(gotRemoteDescription);
+}
+
+function gotRemoteDescription(description){
+  remotePeerConnection.setLocalDescription(description);
+  trace("Answer from remotePeerConnection: \n" + description.sdp);
+  localPeerConnection.setRemoteDescription(description);
+}
+
+function hangup() {
+  trace("Ending call");
+  localPeerConnection.close();
+  remotePeerConnection.close();
+  localPeerConnection = null;
+  remotePeerConnection = null;
+  hangupButton.disabled = true;
+  callButton.disabled = false;
+}
+
+function gotRemoteStream(event){
+  if (!remoteStream) {
+    remoteStream = event.stream;
+    remoteVideo.src = URL.createObjectURL(event.stream);
+    trace("Received remote color stream");
+  } else {
+    remoteDepthStream = event.stream;
+    remoteDepthVideo.src = URL.createObjectURL(event.stream);
+    startRendering(remoteContainer, remoteDepthVideo, remoteVideo);
+    trace("Received remote depth stream");
+  }
+  
+}
+
+function gotLocalIceCandidate(event){
+  if (event.candidate) {
+    remotePeerConnection.addIceCandidate(new RTCIceCandidate(event.candidate));
+    trace("Local ICE candidate: \n" + event.candidate.candidate);
+  }
+}
+
+function gotRemoteIceCandidate(event){
+  if (event.candidate) {
+    localPeerConnection.addIceCandidate(new RTCIceCandidate(event.candidate));
+    trace("Remote ICE candidate: \n " + event.candidate.candidate);
+  }
+}
+
+function startRendering(container, depthVideo, rgbVideo) {
+  var camera = new THREE.PerspectiveCamera( 50, container_width / container_height, 1, 10000 );
+  camera.position.set( 0, 0, 500 );
+
+  var scene = new THREE.Scene();
+  var center = new THREE.Vector3();
+  center.z = - 1000;
+
+  var depth_canvas = document.createElement( 'canvas');
+  depth_canvas.width = 320;
+  depth_canvas.height = 240;
+  var depth_context = depth_canvas.getContext('2d');
+  var color_canvas = document.createElement( 'canvas');
+  color_canvas.width = 320;
+  color_canvas.height = 240;
+  var color_context = color_canvas.getContext('2d');
+  var depth_texture;
+  var color_texture;
+  var geometry;
+  var material;
+
+  function VideoReady() {
+    depth_texture = new THREE.Texture( depth_canvas );
+    color_texture = new THREE.Texture( color_canvas );
+
+    var width = 320, height = 240;
+
+    geometry = new THREE.Geometry();
+
+    for ( var i = 0, l = width * height; i < l; i ++ ) {
+
+        var vertex = new THREE.Vector3();
+        vertex.x = ( i % width );
+        vertex.y = Math.floor( i / width );
+
+        geometry.vertices.push( vertex );
+
+    }
+
+    material = new THREE.ShaderMaterial( {
+
+        uniforms: {
+
+            "map": { type: "t", value: depth_texture },
+            "rgbMap": {type: "t", value: color_texture },
+            "width": { type: "f", value: width },
+            "height": { type: "f", value: height },
+            "nearClipping": { type: "f", value: nearClipping },
+            "farClipping": { type: "f", value: farClipping },
+            "depthEncoding": { type: "f", value: 0},
+            "pointSize": { type: "f", value: pointSize },
+            "zOffset": { type: "f", value: zOffset }
+
+        },
+        vertexShader: document.getElementById( 'vs' ).textContent,
+        fragmentShader: document.getElementById( 'fs' ).textContent,
+        depthTest: false, depthWrite: false,
+        transparent: true
+
+    } );
+
+    var mesh = new THREE.ParticleSystem( geometry, material );
+    mesh.position.x = 0;
+    mesh.position.y = 0;
+    scene.add( mesh );
+
+    var gui = new dat.GUI({autoPlace: false});
+    container.appendChild(gui.domElement);
+    gui.domElement.style.position = "absolute";
+    gui.domElement.style.top = "0px";
+    gui.domElement.style.right = "5px";
+    gui.add( material.uniforms.nearClipping, 'value', 1, 10000, 1.0 ).name( 'nearClipping' );
+    gui.add( material.uniforms.farClipping, 'value', 1, 10000, 1.0 ).name( 'farClipping' );
+    gui.add( material.uniforms.pointSize, 'value', 1, 10, 1.0 ).name( 'pointSize' );
+    gui.add( material.uniforms.zOffset, 'value', 0, 4000, 1.0 ).name( 'zOffset' );
+    gui.add( material.uniforms.depthEncoding, 'value', { Grayscale: 0, Adaptive: 1, Raw: 2 } ).name('Depth Encoding');
+    gui.close();
+
+    var intervalId = setInterval(drawVideo, 1000 / 30 );
+    animate();
+
+  }
+
+  var renderer = new THREE.WebGLRenderer();
+  renderer.setSize( container_width, container_height );
+  container.appendChild( renderer.domElement );
+
+  var mouse = new THREE.Vector3( 0, 0, 1 );
+
+  window.addEventListener( 'mousemove', onDocumentMouseMove, false );
+
+  requestAnimationFrame(VideoReady);
+
+  function drawVideo() {
+    if ( depthVideo.readyState === depthVideo.HAVE_ENOUGH_DATA ) {
+        depth_context.drawImage(depthVideo, 0, 0, depth_canvas.width, depth_canvas.height);
+        depth_texture.needsUpdate = true;
+    }
+    if ( rgbVideo.readyState === rgbVideo.HAVE_ENOUGH_DATA ) {
+        color_context.drawImage(rgbVideo, 0, 0, color_canvas.width, color_canvas.height);
+        color_texture.needsUpdate = true;
+    }
+  }
+
+  function onDocumentMouseMove( event ) {
+    mouse.x = ( event.clientX - window.innerWidth / 2 ) * 8;
+    mouse.y = ( event.clientY - window.innerHeight / 2 ) * 8;
+  }
+
+  function animate() {
+    animationId = requestAnimationFrame( animate );
+
+    render();
+    stats.update();
+  }
+
+  function render() {
+    camera.position.x += ( mouse.x - camera.position.x ) * 0.05;
+    camera.position.y += ( - mouse.y - camera.position.y ) * 0.05;
+    camera.lookAt( center );
+
+    renderer.render( scene, camera );
+  }
+}
+
+</script>
+
+</body>
+
+</html>
