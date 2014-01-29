@@ -11,7 +11,41 @@
 <title>WebRTC client</title>
 
 <!-- <link rel='stylesheet' href='css/main.css' /> -->
+<style>
+    body {
+        font-family: Monospace;
+        background-color: #000000;
+        margin: 0px;
+        overflow: hidden;
+    }
 
+    video {
+        width: 320px;
+        height: 240px;
+    }
+
+    #info {
+        color: #ffffff;
+
+        font-family: Monospace;
+        font-size: 13px;
+        text-align: center;
+        font-weight: bold;
+
+        position: absolute;
+        top: 0px; width: 100%;
+        padding: 5px;
+    }
+
+    #remote3DSence {
+      width: 640px;
+      height: 480px;
+    }
+
+    a {
+        color: #0040ff;
+    }
+</style>
 </head>
 
 <body>
@@ -20,13 +54,135 @@
 
   <div id='videos'>
     <video id='localVideo' autoplay muted></video>
+    <video id='localDepthVideo' autoplay muted></video>
     <video id='remoteVideo' autoplay></video>
+    <video id="remoteDepthVideo" autoplay muted></video>
+    <div id="remote3DSence"></div>
   </div>
 
 </div>
 
+<script src="libs/three.min.js"></script>
+<script src='libs/dat.gui.min.js'></script>
+<script src="libs/Detector.js"></script>
+<script src="libs/stats.min.js"></script>
 <script src='/socket.io/socket.io.js'></script>
 <script src='js/main.js'></script>
+<script id="vs" type="x-shader/x-vertex">
 
+    uniform sampler2D map;
+
+    uniform float width;
+    uniform float height;
+    uniform float nearClipping, farClipping;
+
+    uniform float pointSize;
+    uniform float zOffset;
+
+    uniform float depthEncoding;
+
+    varying vec2 vUv;
+
+    const float XtoZ = 1.11146; // tan( 1.0144686 / 2.0 ) * 2.0;
+    const float YtoZ = 0.83359; // tan( 0.7898090 / 2.0 ) * 2.0;
+
+    const float max = 3000.;
+    const float min = 150.;
+    const float np = 512.;
+    const float w = max;
+
+    // Implement the depth decode scheme proposed in paper
+    // "Adapting Standard Video Codecs for Depth Streaming"
+    highp float decodeAdaptiveDepth(highp vec4 rgba) {
+        highp float L = rgba.b;
+        highp float Ha = rgba.g;
+        highp float Hb = rgba.r;
+        highp float p = np / w;
+
+        highp float m = mod(floor( 4. * L / p - 0.5 ), 4.);
+        highp float q;
+        if (m == 0.) {
+            q = p / 2. * Ha;
+        } else if (m == 1.) {
+            q = p / 2. * Hb;
+        } else if (m == 2.) {
+            q = p / 2. * (1. - Ha);
+        } else if (m == 3.) {
+            q = p / 2. * (1. - Hb);
+        }
+
+        highp float l = L - (mod(L - p / 8., p)) + p / 4. * m - p / 8.;
+
+        highp float d = w * (l + q);
+        if (d < min)
+            return 1.0;
+        else
+            return (l + q);
+    }
+
+    // Implement the BIT2 scheme described in paper
+    // "Adapting Standard Video Codecs for Depth Streaming"
+    highp float decodeRawDepth(highp vec4 rgba) {
+        highp float d = 255. * rgba.b * 256. +
+                        255. * rgba.g * 4. + 
+                        255. * rgba.r / 8.;
+        if (d < min || d > w)
+            return 1.0;
+        else
+            return d / w;
+    }
+
+    // Implement the equation (5) in paper
+    // "3-D Video Representation Using Depth Maps"
+    highp float decodeGrayscaleDepth(highp vec4 rgba) {
+        highp float d = 1.0 / (rgba.b * (1.0 / min - 1.0 / max) + 1.0 / max);
+        return d / max;
+    }
+
+    void main() {
+
+        vUv = vec2( position.x / width, position.y / height );
+
+        vec4 color = texture2D( map, vUv );
+
+        float depth = 1.0;
+
+        if (depthEncoding == 0.)
+            depth = decodeGrayscaleDepth(color);
+        else if (depthEncoding == 1.)
+            depth = decodeAdaptiveDepth(color);
+        else if (depthEncoding == 2.)
+            depth = decodeRawDepth(color);
+
+        // Projection code by @kcmic
+        float z = depth * (farClipping - nearClipping) + nearClipping;
+
+        vec4 pos = vec4(
+            ( position.x / width - 0.5 ) * z * XtoZ,
+            ( position.y / height - 0.5 ) * z * YtoZ,
+            - z + zOffset,
+            1.0);
+
+        gl_PointSize = pointSize;
+        gl_Position = projectionMatrix * modelViewMatrix * pos;
+
+    }
+
+</script>
+
+<script id="fs" type="x-shader/x-fragment">
+
+    uniform sampler2D map;
+    uniform sampler2D rgbMap;
+    uniform float enableRgbTexture;
+
+    varying vec2 vUv;
+
+    void main() {
+        vec4 color = texture2D( rgbMap, vUv );
+        gl_FragColor = vec4( color.r, color.g, color.b, smoothstep( 8000.0, -8000.0, gl_FragCoord.z / gl_FragCoord.w ) );
+    }
+
+</script>
 </body>
 </html>

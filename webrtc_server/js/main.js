@@ -1,5 +1,8 @@
 'use strict';
 
+var container = document.getElementById("remote3DSence");
+var container_width = 640, container_height = 480;
+
 var isChannelReady;
 var isInitiator = false;
 var isStarted = false;
@@ -7,6 +10,25 @@ var localStream;
 var pc;
 var remoteStream;
 var turnReady;
+var localDepthStream, remoteDepthStream;
+
+var nearClipping = 150, farClipping = 3000;
+var pointSize = 2;
+var zOffset = 500;
+
+var stats = new Stats();
+stats.domElement.style.position = 'absolute';
+stats.domElement.style.bottom = '0px';
+stats.domElement.style.left = '0px';
+document.body.appendChild( stats.domElement );
+
+var tryRgbd = false;
+try {
+  var re = /Chrome\/\d*\.\d*\.\d*\.\d*/;
+  if (navigator.userAgent.match(re)[0].split('/')[1].split('.')[0] > 33)
+    tryRgbd = true;
+} catch (e) {
+}
 
 var pc_config = {'iceServers': [{'url': 'stun:stun.l.google.com:19302'}]};
 
@@ -94,36 +116,76 @@ socket.on('message', function (message){
 ////////////////////////////////////////////////////
 
 var localVideo = document.querySelector('#localVideo');
+var localDepthVideo = document.querySelector('#localDepthVideo');
 var remoteVideo = document.querySelector('#remoteVideo');
+var remoteDepthVideo = document.querySelector('#remoteDepthVideo');
 
-function handleUserMedia(stream) {
+var no_depth = false;
+
+function handleRGBStream(stream) {
   console.log('Adding local stream.');
   localVideo.src = window.URL.createObjectURL(stream);
   localStream = stream;
-  sendMessage('got user media');
-  if (isInitiator) {
+
+  if (isInitiator && no_depth) {
+    sendMessage('got user media');
     maybeStart();
   }
+  // then try depth
+  if (!no_depth) {
+    navigator.getUserMedia(depth_constraints, handleDepthStream, function(error) {
+      console.log('cannot obtain depth stream: ', error);
+    });
+  }
+}
+
+function handleDepthStream(stream){
+  console.log("Received local depth stream");
+  localDepthVideo.src = window.URL.createObjectURL(stream);
+  localDepthStream = stream;
+  sendMessage('got user media');
+  if (isInitiator)
+    maybeStart();
 }
 
 function handleUserMediaError(error){
   console.log('navigator.getUserMedia error: ', error);
 }
 
-var constraints = {video: true};
+var rgb_constraints = {video: true};
+var rgbd_constraints = {video:{'mandatory': {'depth': 'rgbd'}}};
+var depth_constraints = {video: {'mandatory': {'depth': true}}};
 navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
-navigator.getUserMedia(constraints, handleUserMedia, handleUserMediaError);
 
-console.log('Getting user media with constraints', constraints);
+// first try rgbd
+if (tryRgbd) {
+  navigator.getUserMedia(rgbd_constraints, handleRGBStream, function(error) {
+    console.log('cannot fetch RGBD stream: ', error);
+    console.log('try normla RGB stream');
+    no_depth = true;
+    navigator.getUserMedia(rgb_constraints, handleRGBStream, handleUserMediaError);
+  });
+} else {
+  no_depth = false;
+  navigator.getUserMedia(rgb_constraints, handleRGBStream, handleUserMediaError);
+}
 
 if (location.hostname != "localhost") {
   requestTurn('https://computeengineondemand.appspot.com/turn?username=41784574&key=4080218913');
 }
 
 function maybeStart() {
+
   if (!isStarted && typeof localStream != 'undefined' && isChannelReady) {
+    if (!no_depth && typeof localDepthStream == 'undefined')
+      return;
     createPeerConnection();
     pc.addStream(localStream);
+    console.log('add RGB stream');
+    if (typeof localDepthStream != 'undefined') {
+      pc.addStream(localDepthStream);
+      console.log('add Depth stream');
+    }
     isStarted = true;
     console.log('isInitiator', isInitiator);
     if (isInitiator) {
@@ -166,9 +228,17 @@ function handleIceCandidate(event) {
 }
 
 function handleRemoteStreamAdded(event) {
-  console.log('Remote stream added.');
-  remoteVideo.src = window.URL.createObjectURL(event.stream);
-  remoteStream = event.stream;
+  // The assumption is RGB stream is the first one.
+  if (typeof remoteStream == 'undefined') {
+    console.log('Remote RGB stream added.');
+    remoteVideo.src = window.URL.createObjectURL(event.stream);
+    remoteStream = event.stream;
+  } else if (typeof remoteDepthStream == 'undefined') {
+    console.log('Remote depth stream added.');
+    remoteDepthStream = event.stream;
+    remoteDepthVideo.src = URL.createObjectURL(event.stream);
+    startRendering(container, remoteDepthVideo, remoteVideo);
+  }
 }
 
 function handleCreateOfferError(event){
@@ -220,12 +290,6 @@ function requestTurn(turn_url) {
     xhr.open('GET', turn_url, true);
     xhr.send();
   }
-}
-
-function handleRemoteStreamAdded(event) {
-  console.log('Remote stream added.');
-  remoteVideo.src = window.URL.createObjectURL(event.stream);
-  remoteStream = event.stream;
 }
 
 function handleRemoteStreamRemoved(event) {
@@ -329,3 +393,127 @@ function removeCN(sdpLines, mLineIndex) {
   return sdpLines;
 }
 
+function startRendering(container, depthVideo, rgbVideo) {
+  var camera = new THREE.PerspectiveCamera( 50, container_width / container_height, 1, 10000 );
+  camera.position.set( 0, 0, 500 );
+
+  var scene = new THREE.Scene();
+  var center = new THREE.Vector3();
+  center.z = - 1000;
+
+  var depth_canvas = document.createElement( 'canvas');
+  depth_canvas.width = 320;
+  depth_canvas.height = 240;
+  var depth_context = depth_canvas.getContext('2d');
+  var color_canvas = document.createElement( 'canvas');
+  color_canvas.width = 320;
+  color_canvas.height = 240;
+  var color_context = color_canvas.getContext('2d');
+  var depth_texture;
+  var color_texture;
+  var geometry;
+  var material;
+
+  function VideoReady() {
+    depth_texture = new THREE.Texture( depth_canvas );
+    color_texture = new THREE.Texture( color_canvas );
+
+    var width = 320, height = 240;
+
+    geometry = new THREE.Geometry();
+
+    for ( var i = 0, l = width * height; i < l; i ++ ) {
+
+        var vertex = new THREE.Vector3();
+        vertex.x = ( i % width );
+        vertex.y = Math.floor( i / width );
+
+        geometry.vertices.push( vertex );
+
+    }
+
+    material = new THREE.ShaderMaterial( {
+
+        uniforms: {
+
+            "map": { type: "t", value: depth_texture },
+            "rgbMap": {type: "t", value: color_texture },
+            "width": { type: "f", value: width },
+            "height": { type: "f", value: height },
+            "nearClipping": { type: "f", value: nearClipping },
+            "farClipping": { type: "f", value: farClipping },
+            "depthEncoding": { type: "f", value: 0},
+            "pointSize": { type: "f", value: pointSize },
+            "zOffset": { type: "f", value: zOffset }
+
+        },
+        vertexShader: document.getElementById( 'vs' ).textContent,
+        fragmentShader: document.getElementById( 'fs' ).textContent,
+        depthTest: false, depthWrite: false,
+        transparent: true
+
+    } );
+
+    var mesh = new THREE.ParticleSystem( geometry, material );
+    mesh.position.x = 0;
+    mesh.position.y = 0;
+    scene.add( mesh );
+
+    var gui = new dat.GUI({autoPlace: false});
+    container.appendChild(gui.domElement);
+    gui.domElement.style.position = "absolute";
+    gui.domElement.style.top = "0px";
+    gui.domElement.style.right = "5px";
+    gui.add( material.uniforms.nearClipping, 'value', 1, 10000, 1.0 ).name( 'nearClipping' );
+    gui.add( material.uniforms.farClipping, 'value', 1, 10000, 1.0 ).name( 'farClipping' );
+    gui.add( material.uniforms.pointSize, 'value', 1, 10, 1.0 ).name( 'pointSize' );
+    gui.add( material.uniforms.zOffset, 'value', 0, 4000, 1.0 ).name( 'zOffset' );
+    gui.add( material.uniforms.depthEncoding, 'value', { Grayscale: 0, Adaptive: 1, Raw: 2 } ).name('Depth Encoding');
+    gui.close();
+
+    var intervalId = setInterval(drawVideo, 1000 / 30 );
+    animate();
+
+  }
+
+  var renderer = new THREE.WebGLRenderer();
+  renderer.setSize( container_width, container_height );
+  container.appendChild( renderer.domElement );
+
+  var mouse = new THREE.Vector3( 0, 0, 1 );
+
+  window.addEventListener( 'mousemove', onDocumentMouseMove, false );
+
+  requestAnimationFrame(VideoReady);
+
+  function drawVideo() {
+    if ( depthVideo.readyState === depthVideo.HAVE_ENOUGH_DATA ) {
+        depth_context.drawImage(depthVideo, 0, 0, depth_canvas.width, depth_canvas.height);
+        depth_texture.needsUpdate = true;
+    }
+    if ( rgbVideo.readyState === rgbVideo.HAVE_ENOUGH_DATA ) {
+        color_context.drawImage(rgbVideo, 0, 0, color_canvas.width, color_canvas.height);
+        color_texture.needsUpdate = true;
+    }
+  }
+
+  function onDocumentMouseMove( event ) {
+    mouse.x = ( event.clientX - window.innerWidth / 2 ) * 8;
+    mouse.y = ( event.clientY - window.innerHeight / 2 ) * 8;
+  }
+
+  function animate() {
+    var animationId = requestAnimationFrame( animate );
+
+    render();
+    stats.update();
+  }
+
+  function render() {
+    camera.position.x += ( mouse.x - camera.position.x ) * 0.05;
+    camera.position.y += ( - mouse.y - camera.position.y ) * 0.05;
+    camera.lookAt( center );
+
+    renderer.render( scene, camera );
+  }
+}
