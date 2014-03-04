@@ -69,14 +69,14 @@
 
             // Implement the depth decode scheme proposed in paper
             // "Adapting Standard Video Codecs for Depth Streaming"
-            highp float decodeAdaptiveDepth(highp vec4 rgba) {
-                highp float L = rgba.b;
-                highp float Ha = rgba.g;
-                highp float Hb = rgba.r;
-                highp float p = np / w;
+            float decodeAdaptiveDepth(vec4 rgba) {
+                float L = rgba.b;
+                float Ha = rgba.g;
+                float Hb = rgba.r;
+                float p = np / w;
 
-                highp float m = mod(floor( 4. * L / p - 0.5 ), 4.);
-                highp float q;
+                float m = mod(floor( 4. * L / p - 0.5 ), 4.);
+                float q;
                 if (m == 0.) {
                     q = p / 2. * Ha;
                 } else if (m == 1.) {
@@ -87,31 +87,33 @@
                     q = p / 2. * (1. - Hb);
                 }
 
-                highp float l = L - (mod(L - p / 8., p)) + p / 4. * m - p / 8.;
+                float l = L - (mod(L - p / 8., p)) + p / 4. * m - p / 8.;
 
-                highp float d = w * (l + q);
+                float d = w * (l + q);
                 if (d < min)
                     return 1.0;
                 else
                     return (l + q);
+                return 1.0;
             }
 
             // Implement the BIT2 scheme described in paper
             // "Adapting Standard Video Codecs for Depth Streaming"
-            highp float decodeRawDepth(highp vec4 rgba) {
-                highp float d = 255. * rgba.b * 256. +
+            float decodeRawDepth(vec4 rgba) {
+                float d = 255. * rgba.b * 256. +
                                 255. * rgba.g * 4. + 
                                 255. * rgba.r / 8.;
                 if (d < min || d > w)
                     return 1.0;
                 else
                     return d / w;
+                return 1.0;
             }
 
             // Implement the equation (5) in paper
             // "3-D Video Representation Using Depth Maps"
-            highp float decodeGrayscaleDepth(highp vec4 rgba) {
-                highp float d = 1.0 / (rgba.b * (1.0 / min - 1.0 / max) + 1.0 / max);
+            float decodeGrayscaleDepth(vec4 rgba) {
+                float d = 1.0 / (rgba.b * (1.0 / min - 1.0 / max) + 1.0 / max);
                 return d / max;
             }
 
