@@ -1,38 +1,5 @@
-#rgb_buttons {
-  position: absolute;
-  left: 30;
-  top: 20;
-}
-#rgb_video {
-  position: absolute;
-  left: 10;
-  top: 50;
-  width: 320;
-  height: 240;
-  background: rgba(0,0,0,0.25);
-}
-#depth_buttons {
-  position: absolute;
-  left: 420;
-  top: 20;
-}
-#depth_video {
-  position: absolute;
-  left: 400;
-  top: 50;
-  width: 320;
-  height: 240;
-  background: rgba(0,0,0,0.25);
-}
-#rgbd_buttons {
-  position: absolute;
-  left: 820;
-  top: 20;
-}
-#rgbd_video {
-  position: absolute;
-  left: 800;
-  top: 50;
+
+video {
   width: 320;
   height: 240;
   background: rgba(0,0,0,0.25);

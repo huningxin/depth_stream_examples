@@ -4,27 +4,40 @@
 <link href="main.css" type="text/css" rel="Stylesheet" />
 </head>
 <body>
+<table style="width:300px">
+<tr>
+<td>
+<div id="rgb">
+<div id="rgb_title">Color Stream</div>
+<video id="rgb_video" autoplay></video>
 <div id="rgb_buttons">
-  <button id="start_rgb_btn">Start RGB Capture</button>
-  <button id="stop_rgb_btn">Stop RGB Capture</button>
+  <button id="start_rgb_btn">Start</button>
+  <button id="stop_rgb_btn">Stop</button>
 </div>
-<div>
-  <video id="rgb_video" autoplay></video>
 </div>
-<div id="rgbd_buttons">
-  <button id="start_rgbd_btn">Start RGB-D Capture</button>
-  <button id="stop_rgbd_btn">Stop RGB-D Capture</button>
-</div>
-<div>
-  <video id="rgbd_video" autoplay></video>
-</div>
+</td>
+<td>
+<div id="depth">
+<div id="depth_title">Depth Stream</div>
+<video id="depth_video" autoplay></video>
 <div id="depth_buttons">
-  <button id="start_depth_btn">Start Depth Capture</button>
-  <button id="stop_depth_btn">Stop Depth Capture</button>
+  <button id="start_depth_btn">Start</button>
+  <button id="stop_depth_btn">Stop</button>
 </div>
-<div>
-  <video id="depth_video" autoplay></video>
 </div>
+</td>
+<td>
+<div id="rgbd">
+<div id="rgbd_title">Calibrated Color Stream</div>
+<video id="rgbd_video" autoplay></video>
+<div id="rgbd_buttons">
+  <button id="start_rgbd_btn">Start</button>
+  <button id="stop_rgbd_btn">Stop</button>
+</div>
+</div>
+</td>
+</tr>
+</table>
 <script src="main.js"></script>
 </body>
 </html>
