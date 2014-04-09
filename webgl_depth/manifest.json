@@ -1,0 +1,17 @@
+{
+  "name": "WebGL Example of Depth Stream",
+  "version": "1",
+  "minimum_chrome_version": "35.0.1898.0",
+  "manifest_version": 2,
+  "description": "WebGL Example of Depth Stream",
+  "offline_enabled": true,
+  "icons": {
+    "128": "icon128.png"
+  },
+  "app": {
+    "background": {
+      "scripts": ["background.js"]
+    }
+  },
+  "permissions": ["videoCapture", "storage"]
+}
