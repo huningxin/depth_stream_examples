@@ -15,6 +15,8 @@ var container;
 
             var gui;
 
+            var showBackground = false;
+
             var showDepthVideo = true;
             var depthStream = null;
 
@@ -168,7 +170,8 @@ var container;
                             "pointSize": { type: "f", value: 2 },
                             "zOffset": { type: "f", value: 0 },
                             "depthEncoding": { type: "f", value: 0},
-                            "enableRgbTexture": { type: "f", value: enableRgbTexture ? 1.0 : 0.0}
+                            "enableRgbTexture": { type: "f", value: enableRgbTexture ? 1.0 : 0.0},
+                            "showBackground": {type: "f", value: showBackground ? 1.0 : 0.0}
 
                         },
                         vertexShader: document.getElementById( 'vs' ).textContent,
@@ -202,6 +205,12 @@ var container;
                         gui.add( window, 'enableRgbTexture').name('Enable RGB Texture').onChange(function(value) {
                             reset();
                             start();
+                        });
+                        gui.add( window, 'showBackground').name('Show Background').onChange(function(value) {
+                                if (value)
+                                    material.uniforms.showBackground.value = 1.0;
+                                else
+                                    material.uniforms.showBackground.value = 0.0;
                         });
                         gui.add( material.uniforms.depthEncoding, 'value', { Grayscale: 0, Adaptive: 1, Raw: 2 } ).name('Depth Encoding');
                         gui.close();

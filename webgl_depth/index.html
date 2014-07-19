@@ -61,6 +61,8 @@
 
             uniform float depthEncoding;
 
+            uniform float showBackground;
+
             varying vec2 vUv;
 
             const float XtoZ = 1.11146; // tan( 1.0144686 / 2.0 ) * 2.0;
@@ -139,7 +141,7 @@
                 // Projection code by @kcmic
                 float z = depth * (farClipping - nearClipping) + nearClipping;
 
-                if (z == farClipping)
+                if (showBackground == 0.0 && z == farClipping)
                     return; 
 
                 vec4 pos = vec4(
