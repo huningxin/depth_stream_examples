@@ -139,6 +139,9 @@
                 // Projection code by @kcmic
                 float z = depth * (farClipping - nearClipping) + nearClipping;
 
+                if (z == farClipping)
+                    return; 
+
                 vec4 pos = vec4(
                     ( position.x / width - 0.5 ) * z * XtoZ,
                     ( position.y / height - 0.5 ) * z * YtoZ,
