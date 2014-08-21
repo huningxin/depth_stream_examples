@@ -54,9 +54,9 @@
 
 <body>
 
-  <video id="localVideo" autoplay muted></video>
+  <video id="localVideo" autoplay></video>
   <video id="localDepthVideo" autoplay muted></video>
-  <video id="remoteVideo" autoplay muted></video>
+  <video id="remoteVideo" autoplay></video>
   <video id="remoteDepthVideo" autoplay muted></video>
   <div>
     <button id="startButton">Start</button>
@@ -235,7 +235,7 @@ function gotStream(stream){
   localVideo.src = URL.createObjectURL(stream);
   localStream = stream;
   callButton.disabled = false;
-  navigator.getUserMedia({audio:true, video: {'mandatory': {'depth': true}}}, gotDepthStream,
+  navigator.getUserMedia({audio:false, video: {'mandatory': {'depth': true}}}, gotDepthStream,
     function(error) {
       trace("navigator.getUserMedia error for depth stream: ", error);
     });
