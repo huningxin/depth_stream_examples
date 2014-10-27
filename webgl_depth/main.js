@@ -1,7 +1,7 @@
 var container;
             var info;
 
-            var scene, camera, light, renderer;
+            var scene, camera, light, renderer, controls;
             var geometry, cube, mesh, material;
             var mouse, center;
             var stats;
@@ -118,6 +118,12 @@ var container;
                 camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 1, 10000 );
                 camera.position.set( 0, 0, 500 );
 
+                controls = new THREE.OrbitControls( camera );
+                controls.target = new THREE.Vector3( 0, 0, -1000 );
+                controls.update();
+                controls.dollyIn(1.5);
+                controls.update();
+
                 scene = new THREE.Scene();
                 center = new THREE.Vector3();
                 center.z = - 1000;
@@ -144,6 +150,7 @@ var container;
 
                     var width = 320, height = 240;
                     var nearClipping = 150, farClipping = 3000;
+                    var depthOfField = 1000;
 
                     geometry = new THREE.Geometry();
 
@@ -167,7 +174,8 @@ var container;
                             "height": { type: "f", value: height },
                             "nearClipping": { type: "f", value: nearClipping },
                             "farClipping": { type: "f", value: farClipping },
-                            "pointSize": { type: "f", value: 2 },
+                            "depthOfField": { type: "f", value: depthOfField },
+                            "pointSize": { type: "f", value: 4 },
                             "zOffset": { type: "f", value: 0 },
                             "depthEncoding": { type: "f", value: 0},
                             "enableRgbTexture": { type: "f", value: enableRgbTexture ? 1.0 : 0.0},
@@ -194,6 +202,7 @@ var container;
                         gui.domElement.style.right = "5px";
                         gui.add( material.uniforms.nearClipping, 'value', 1, 10000, 1.0 ).name( 'nearClipping' );
                         gui.add( material.uniforms.farClipping, 'value', 1, 10000, 1.0 ).name( 'farClipping' );
+                        gui.add( material.uniforms.depthOfField, 'value', 1, 10000, 1.0 ).name( 'depthOfField' );
                         gui.add( material.uniforms.pointSize, 'value', 1, 10, 1.0 ).name( 'pointSize' );
                         gui.add( material.uniforms.zOffset, 'value', 0, 4000, 1.0 ).name( 'zOffset' );
                         gui.add( window, 'showDepthVideo' ).name('Show Depth Video').onChange(function(value) {
@@ -295,10 +304,6 @@ var container;
 
                 mouse = new THREE.Vector3( 0, 0, 1 );
 
-                document.addEventListener( 'mousemove', onDocumentMouseMove, false );
-
-                //
-
                 window.addEventListener( 'resize', onWindowResize, false );
             }
 
@@ -311,12 +316,6 @@ var container;
 
             }
 
-            function onDocumentMouseMove( event ) {
-
-                mouse.x = ( event.clientX - window.innerWidth / 2 ) * 8;
-                mouse.y = ( event.clientY - window.innerHeight / 2 ) * 8;
-
-            }
 
             function animate() {
 
@@ -328,10 +327,6 @@ var container;
             }
 
             function render() {
-
-                camera.position.x += ( mouse.x - camera.position.x ) * 0.05;
-                camera.position.y += ( - mouse.y - camera.position.y ) * 0.05;
-                camera.lookAt( center );
 
                 renderer.render( scene, camera );
 

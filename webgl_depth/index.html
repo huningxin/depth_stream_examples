@@ -45,6 +45,7 @@
     </head>
     <body>
         <script src="libs/three.min.js"></script>
+        <script src="libs/OrbitControls.js"></script>
         <script src='libs/dat.gui.min.js'></script>
         <script src="libs/Detector.js"></script>
         <script src="libs/stats.min.js"></script>
@@ -62,6 +63,8 @@
             uniform float depthEncoding;
 
             uniform float showBackground;
+
+            uniform float depthOfField;
 
             varying vec2 vUv;
 
@@ -142,7 +145,10 @@
                 float z = depth * (farClipping - nearClipping) + nearClipping;
 
                 if (showBackground == 0.0 && z == farClipping)
-                    return; 
+                    return;
+
+                if (z > depthOfField)
+                    return;
 
                 vec4 pos = vec4(
                     ( position.x / width - 0.5 ) * z * XtoZ,
