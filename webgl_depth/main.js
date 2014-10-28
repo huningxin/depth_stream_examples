@@ -150,7 +150,7 @@ var container;
 
                     var width = 320, height = 240;
                     var nearClipping = 150, farClipping = 3000;
-                    var depthOfField = 1000;
+                    var depthOfField = 3000;
 
                     geometry = new THREE.Geometry();
 
