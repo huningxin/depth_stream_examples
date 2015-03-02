@@ -1,20 +1,20 @@
 var rgb_video = document.querySelector('#rgb_video');
-var rgbd_video = document.querySelector('#rgbd_video');
+var aligned_depth_video = document.querySelector('#aligned_depth_video');
 var depth_video = document.querySelector('#depth_video');
 
 var start_rgb_btn = document.querySelector('#start_rgb_btn');
 var stop_rgb_btn = document.querySelector('#stop_rgb_btn');
-var start_rgbd_btn = document.querySelector('#start_rgbd_btn');
-var stop_rgbd_btn = document.querySelector('#stop_rgbd_btn');
+var start_aligned_depth_btn = document.querySelector('#start_aligned_depth_btn');
+var stop_aligned_depth_btn = document.querySelector('#stop_aligned_depth_btn');
 var start_depth_btn = document.querySelector('#start_depth_btn');
 var stop_depth_btn = document.querySelector('#stop_depth_btn');
 
 var rgb_capture_state = 'IDLE';
-var rgbd_capture_state = 'IDLE';
+var aligned_depth_capture_state = 'IDLE';
 var depth_capture_state = 'IDLE';
 
 var rgb_stream;
-var rgbd_stream;
+var aligned_depth_stream;
 var depth_stream;
 
 function startRGBMediaStream() {
@@ -44,31 +44,31 @@ function stopRGBMediaStream() {
   rgb_capture_state = 'IDLE';
 }
 
-function startRGBDMediaStream() {
-  if (rgbd_capture_state != 'IDLE')
+function startAlignedDepthMediaStream() {
+  if (aligned_depth_capture_state != 'IDLE')
     return;
 
   navigator.webkitGetUserMedia({
     audio: false,
-    video: {'mandatory': {'depth': "rgbd"}}
+    video: {'mandatory': {'depth': "aligned"}}
   }, function(stream) {
-    rgbd_stream = stream;
+    aligned_depth_stream = stream;
     var vendorURL = window.URL || window.webkitURL;
-    rgbd_video.src = vendorURL ? vendorURL.createObjectURL(rgbd_stream) : rgbd_stream;
-    rgbd_video.play();
-    rgbd_capture_state = 'RUNNING';
+    aligned_depth_video.src = vendorURL ? vendorURL.createObjectURL(aligned_depth_stream) : aligned_depth_stream;
+    aligned_depth_video.play();
+    aligned_depth_capture_state = 'RUNNING';
   }, function(e) {
     console.log(e);
   });
 }
 
-function stopRGBDMediaStream() {
-  if (rgbd_capture_state != 'RUNNING')
+function stopAlignedDepthMediaStream() {
+  if (aligned_depth_capture_state != 'RUNNING')
     return;
-  rgbd_stream.stop();
-  rgbd_video.pause();
-  rgbd_video.src = '';
-  rgbd_capture_state = 'IDLE';
+  aligned_depth_stream.stop();
+  aligned_depth_video.pause();
+  aligned_depth_video.src = '';
+  aligned_depth_capture_state = 'IDLE';
 }
 
 function startDepthMediaStream() {
@@ -100,7 +100,7 @@ function stopDepthMediaStream() {
 
 start_rgb_btn.addEventListener('click', startRGBMediaStream);
 stop_rgb_btn.addEventListener('click', stopRGBMediaStream);
-start_rgbd_btn.addEventListener('click', startRGBDMediaStream);
-stop_rgbd_btn.addEventListener('click', stopRGBDMediaStream);
+start_aligned_depth_btn.addEventListener('click', startAlignedDepthMediaStream);
+stop_aligned_depth_btn.addEventListener('click', stopAlignedDepthMediaStream);
 start_depth_btn.addEventListener('click', startDepthMediaStream);
 stop_depth_btn.addEventListener('click', stopDepthMediaStream);
