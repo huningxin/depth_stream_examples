@@ -35,14 +35,14 @@ var container;
             function start() {
                 navigator.webkitGetUserMedia({
                     audio: false,
-                    video: { "mandatory": { "depth": true}},
+                    video: { "mandatory": { "depth": "aligned"}},
                 },
                 function(stream) {
                     depthStream = stream;
                     if (enableRgbTexture) {
                         navigator.webkitGetUserMedia({
                             audio: false,
-                            video: { "mandatory": { "depth": "rgbd"}},
+                            video: true,
                             },
                             function(stream) {
                                 rgbStream = stream;
@@ -51,7 +51,7 @@ var container;
                                      kLiveDepthStream);
                             },
                             function(e) {
-                            console.log('fails to obtain rgbd stream ' + e);
+                            console.log('fails to obtain color stream ' + e);
                         });
                     } else {
                         init(window.URL.createObjectURL(depthStream),
@@ -131,15 +131,15 @@ var container;
 
                 depthVideo = document.createElement( 'video' );
                 depthCanvas = document.createElement( 'canvas');
-                depthCanvas.width = 320;
-                depthCanvas.height = 240;
+                depthCanvas.width = 640;
+                depthCanvas.height = 480;
                 depthContext = depthCanvas.getContext('2d');
 
                 if (enableRgbTexture) {
                     rgbVideo = document.createElement( 'video' );
                     rgbCanvas = document.createElement( 'canvas');
-                    rgbCanvas.width = 320;
-                    rgbCanvas.height = 240;
+                    rgbCanvas.width = 640;
+                    rgbCanvas.height = 480;
                     rgbContext = rgbCanvas.getContext('2d');
                 }
 
@@ -148,9 +148,9 @@ var container;
                     if (enableRgbTexture)
                         rgbTexture = new THREE.Texture( rgbCanvas );
 
-                    var width = 320, height = 240;
-                    var nearClipping = 150, farClipping = 3000;
-                    var depthOfField = 3000;
+                    var width = 640, height = 480;
+                    var nearClipping = 100, farClipping = 2047;
+                    var depthOfField = 2047;
 
                     geometry = new THREE.Geometry();
 

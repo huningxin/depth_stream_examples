@@ -71,8 +71,8 @@
             const float XtoZ = 1.11146; // tan( 1.0144686 / 2.0 ) * 2.0;
             const float YtoZ = 0.83359; // tan( 0.7898090 / 2.0 ) * 2.0;
 
-            const float max = 3000.;
-            const float min = 150.;
+            const float max = 2047.;
+            const float min = 100.;
             const float np = 512.;
             const float w = max;
 
@@ -141,11 +141,14 @@
                 else if (depthEncoding == 2.)
                     depth = decodeRawDepth(color);
 
+                if (depth < 0.07)
+                    return;
+
+                if (showBackground == 0.0 && abs(depth - 1.0) < 0.1)
+                    return;
+
                 // Projection code by @kcmic
                 float z = depth * (farClipping - nearClipping) + nearClipping;
-
-                if (showBackground == 0.0 && z == farClipping)
-                    return;
 
                 if (z > depthOfField)
                     return;
