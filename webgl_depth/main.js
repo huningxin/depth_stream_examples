@@ -33,37 +33,46 @@ var container;
             }
 
             function start() {
-                navigator.webkitGetUserMedia({
-                    audio: false,
-                    video: { "mandatory": { "depth": "aligned"}},
-                },
-                function(stream) {
-                    depthStream = stream;
-                    if (enableRgbTexture) {
+                if (enableRgbTexture) {
+                    navigator.webkitGetUserMedia(
+                    {audio: false, video: true},
+                    function(stream) {
+                        rgbStream = stream;
                         navigator.webkitGetUserMedia({
                             audio: false,
-                            video: true,
+                            video: { "mandatory": { "depth": "aligned"}},
                             },
                             function(stream) {
-                                rgbStream = stream;
+                                depthStream = stream;
                                 init(window.URL.createObjectURL(depthStream),
                                      window.URL.createObjectURL(rgbStream), 
                                      kLiveDepthStream);
                             },
                             function(e) {
-                            console.log('fails to obtain color stream ' + e);
+                                console.log('fails to obtain depth stream ' + e);
+                            });
+                    },
+                    function(e) {
+                        console.log('fails to obtain video stream ' + e);
+                    });
+                } else {
+                    navigator.webkitGetUserMedia({
+                        audio: false,
+                        video: { "mandatory": { "depth": true}},
+                        },
+                        function(stream) {
+                            depthStream = stream;
+                            init(window.URL.createObjectURL(depthStream),
+                                 null, kLiveDepthStream);
+                        },
+                        function(e) {
+                            console.log('fails to obtain depth stream ' + e);
                         });
-                    } else {
-                        init(window.URL.createObjectURL(depthStream),
-                             null, kLiveDepthStream);
-                    }
-                },
-                function(e) {
-                    console.log('fails to obtain depth stream ' + e);
-                });
+                }
             }
 
             function reset() {
+                depthStream.stop();
                 depthVideo.pause();
                 if (depthStream) {
                     depthStream = null;
@@ -81,6 +90,7 @@ var container;
 
 
                 if (rgbStream) {
+                    rgbStream.stop();
                     rgbVideo.pause();
                     rgbStream = null;
                     document.body.removeChild(rgbVideo);
